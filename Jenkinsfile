@@ -5,25 +5,51 @@ pipeline {
 
         stage('Install Dependencies') {
             steps {
-                bat 'python -m pip install -r requirements.txt'
+                sh 'python3 -m venv venv'
+                sh './venv/bin/python -m pip install -r requirements.txt'
             }
         }
 
         stage('Run Unit Tests') {
             steps {
-                bat 'python -m pytest -v'
+                sh './venv/bin/python -m pytest -v'
             }
         }
 
         stage('Deploy Application') {
             steps {
-                bat 'start /B python app.py'
+                sh 'mkdir -p deploy && cp app.py requirements.txt deploy/'
             }
         }
 
         stage('Verify Application') {
             steps {
-                bat 'python -c "import urllib.request; r=urllib.request.urlopen(\'http://127.0.0.1:5000/\'); print(r.status); print(r.read().decode()); assert r.status == 200"'
+                sh '''
+                    cd deploy
+                    ../venv/bin/python -c "
+import subprocess, time, urllib.request
+
+p = subprocess.Popen(['../venv/bin/python', 'app.py'])
+
+try:
+    for i in range(15):
+        try:
+            response = urllib.request.urlopen('http://127.0.0.1:5000/', timeout=2)
+            body = response.read().decode()
+            print('HTTP Status:', response.status)
+            print('Response:', body)
+            assert response.status == 200
+            assert body == 'Flask Application is Running!'
+            break
+        except Exception:
+            time.sleep(1)
+    else:
+        raise RuntimeError('Application verification failed')
+finally:
+    p.terminate()
+    p.wait()
+"
+                '''
             }
         }
     }
